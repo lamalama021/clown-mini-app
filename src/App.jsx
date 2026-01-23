@@ -1,0 +1,662 @@
+import { useState, useEffect, useCallback } from 'react'
+
+const API_BASE = import.meta.env.VITE_API_BASE || ''
+const MAX_LEVEL = 6
+const MAX_TEXT_LENGTH = 200
+
+// Telegram WebApp helpers
+function getTgInitData() {
+  try {
+    return window.Telegram?.WebApp?.initData || ''
+  } catch {
+    return ''
+  }
+}
+
+function getTgUser() {
+  try {
+    return window.Telegram?.WebApp?.initDataUnsafe?.user || null
+  } catch {
+    return null
+  }
+}
+
+function showAlert(message) {
+  try {
+    if (window.Telegram?.WebApp?.showAlert) {
+      window.Telegram.WebApp.showAlert(message)
+    } else {
+      alert(message)
+    }
+  } catch {
+    alert(message)
+  }
+}
+
+// Format relative time
+function formatTimeAgo(dateString) {
+  if (!dateString) return ''
+  const date = new Date(dateString)
+  const now = new Date()
+  const diffMs = now - date
+  const diffMins = Math.floor(diffMs / 60000)
+  const diffHours = Math.floor(diffMs / 3600000)
+  const diffDays = Math.floor(diffMs / 86400000)
+
+  if (diffMins < 1) return 'upravo sada'
+  if (diffMins < 60) return `pre ${diffMins} min`
+  if (diffHours < 24) return `pre ${diffHours}h`
+  if (diffDays < 7) return `pre ${diffDays}d`
+  return date.toLocaleDateString('sr-RS')
+}
+
+// Clown image component with fallback
+function ClownImage({ level, size = 'md' }) {
+  const [hasError, setHasError] = useState(false)
+  const sizeClasses = {
+    sm: 'w-12 h-12',
+    md: 'w-16 h-16',
+    lg: 'w-24 h-24',
+    xl: 'w-32 h-32'
+  }
+
+  if (hasError) {
+    return (
+      <div className={`${sizeClasses[size]} flex items-center justify-center bg-gray-700 rounded-full text-4xl`}>
+        🤡
+      </div>
+    )
+  }
+
+  return (
+    <img
+      src={`/images/${level}.png`}
+      alt={`Level ${level} clown`}
+      className={`${sizeClasses[size]} rounded-full object-cover`}
+      onError={() => setHasError(true)}
+    />
+  )
+}
+
+// User card component
+function UserCard({ user }) {
+  const displayName = user.clown_name || user.first_name || user.username || 'Klovn'
+
+  return (
+    <div className="bg-gray-800/80 rounded-2xl p-4 border border-gray-700 hover:border-orange-600 transition-all duration-200 shadow-lg">
+      <div className="flex items-start gap-4">
+        <ClownImage level={user.level ?? 0} size="md" />
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 mb-1">
+            <h3 className="font-semibold text-white truncate">{displayName}</h3>
+            <span className="px-2 py-0.5 bg-orange-600 text-white text-xs font-bold rounded-full shrink-0">
+              Lv.{user.level ?? 0}
+            </span>
+          </div>
+          {user.username && (
+            <p className="text-gray-400 text-sm truncate">@{user.username}</p>
+          )}
+          {user.location && (
+            <p className="text-gray-300 text-sm mt-1 truncate">
+              📍 {user.location}
+            </p>
+          )}
+          {user.status_message && (
+            <p className="text-gray-300 text-sm mt-1 line-clamp-2">
+              💬 {user.status_message}
+            </p>
+          )}
+          <p className="text-gray-500 text-xs mt-2">
+            🕒 {formatTimeAgo(user.updated_at)}
+          </p>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// Dashboard tab component
+function DashboardTab() {
+  const [users, setUsers] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
+  const [search, setSearch] = useState('')
+
+  const fetchUsers = useCallback(async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const res = await fetch(`${API_BASE}/api/users`)
+      if (!res.ok) {
+        throw new Error('Failed to fetch users')
+      }
+      const data = await res.json()
+      setUsers(data)
+    } catch (err) {
+      setError(err.message)
+      console.error('Fetch users error:', err)
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    fetchUsers()
+  }, [fetchUsers])
+
+  const filteredUsers = users.filter(user => {
+    if (!search.trim()) return true
+    const searchLower = search.toLowerCase()
+    const name = (user.clown_name || user.first_name || user.username || '').toLowerCase()
+    const username = (user.username || '').toLowerCase()
+    const location = (user.location || '').toLowerCase()
+    const status = (user.status_message || '').toLowerCase()
+    return name.includes(searchLower) ||
+           username.includes(searchLower) ||
+           location.includes(searchLower) ||
+           status.includes(searchLower)
+  })
+
+  // Stats
+  const totalUsers = users.length
+  const maxLevelUsers = users.filter(u => (u.level ?? 0) >= MAX_LEVEL).length
+  const usersWithLocation = users.filter(u => u.location).length
+
+  return (
+    <div className="max-w-2xl mx-auto p-4 pb-24">
+      {/* Header */}
+      <div className="flex items-center gap-3 mb-4">
+        <input
+          type="text"
+          placeholder="Pretraži klovnove..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="flex-1 bg-gray-800 border border-gray-700 rounded-xl px-4 py-2.5 text-white placeholder-gray-500 focus:outline-none focus:border-orange-500 transition-colors"
+        />
+        <button
+          onClick={fetchUsers}
+          disabled={loading}
+          className="bg-orange-600 hover:bg-orange-700 disabled:bg-gray-600 text-white px-4 py-2.5 rounded-xl font-medium transition-colors flex items-center gap-2"
+        >
+          {loading ? (
+            <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+            </svg>
+          ) : (
+            '🔄'
+          )}
+        </button>
+      </div>
+
+      {/* Error */}
+      {error && (
+        <div className="bg-red-900/50 border border-red-700 rounded-xl p-4 mb-4 text-red-200">
+          {error}
+        </div>
+      )}
+
+      {/* User list */}
+      {loading && users.length === 0 ? (
+        <div className="flex justify-center py-12">
+          <svg className="animate-spin h-8 w-8 text-orange-500" viewBox="0 0 24 24">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+          </svg>
+        </div>
+      ) : filteredUsers.length === 0 ? (
+        <div className="text-center py-12 text-gray-400">
+          {search ? 'Nema rezultata pretrage' : 'Nema klovnova'}
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {filteredUsers.map((user) => (
+            <UserCard key={user.telegram_id} user={user} />
+          ))}
+        </div>
+      )}
+
+      {/* Stats footer */}
+      <div className="fixed bottom-16 left-0 right-0 bg-gray-900/95 backdrop-blur border-t border-gray-800 p-3">
+        <div className="max-w-2xl mx-auto flex justify-around text-center">
+          <div>
+            <div className="text-orange-500 font-bold text-lg">{totalUsers}</div>
+            <div className="text-gray-500 text-xs">Ukupno</div>
+          </div>
+          <div>
+            <div className="text-orange-500 font-bold text-lg">{maxLevelUsers}</div>
+            <div className="text-gray-500 text-xs">Max Level</div>
+          </div>
+          <div>
+            <div className="text-orange-500 font-bold text-lg">{usersWithLocation}</div>
+            <div className="text-gray-500 text-xs">Sa lokacijom</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// Profile tab component
+function ProfileTab() {
+  const [loading, setLoading] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [levelingUp, setLevelingUp] = useState(false)
+  const [profile, setProfile] = useState(null)
+  const [location, setLocation] = useState('')
+  const [statusMessage, setStatusMessage] = useState('')
+
+  const tgUser = getTgUser()
+
+  const fetchProfile = useCallback(async () => {
+    if (!tgUser?.id) return
+
+    setLoading(true)
+    try {
+      const res = await fetch(`${API_BASE}/api/users`)
+      if (!res.ok) throw new Error('Failed to fetch profile')
+
+      const users = await res.json()
+      const myProfile = users.find(u => String(u.telegram_id) === String(tgUser.id))
+
+      if (myProfile) {
+        setProfile(myProfile)
+        setLocation(myProfile.location || '')
+        setStatusMessage(myProfile.status_message || '')
+      }
+    } catch (err) {
+      console.error('Fetch profile error:', err)
+      showAlert('Greška pri učitavanju profila')
+    } finally {
+      setLoading(false)
+    }
+  }, [tgUser?.id])
+
+  useEffect(() => {
+    fetchProfile()
+  }, [fetchProfile])
+
+  const handleLevelUp = async () => {
+    const initData = getTgInitData()
+    if (!initData) {
+      showAlert('Telegram WebApp nije dostupan')
+      return
+    }
+
+    setLevelingUp(true)
+    try {
+      const res = await fetch(`${API_BASE}/api/level-up`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-telegram-init-data': initData
+        }
+      })
+
+      const data = await res.json()
+
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to level up')
+      }
+
+      setProfile(prev => prev ? { ...prev, level: data.level } : null)
+      // no success alert
+    } catch (err) {
+      console.error('Level up error:', err)
+      showAlert(err.message || 'Greška pri povećanju levela')
+    } finally {
+      setLevelingUp(false)
+    }
+  }
+
+  const handleLevelDown = async () => {
+    const initData = getTgInitData()
+    if (!initData) {
+      showAlert('Telegram WebApp nije dostupan')
+      return
+    }
+
+    setLevelingUp(true)
+    try {
+      const res = await fetch(`${API_BASE}/api/level-down`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-telegram-init-data': initData
+        }
+      })
+
+      const data = await res.json()
+
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to level down')
+      }
+
+      setProfile(prev => prev ? { ...prev, level: data.level } : null)
+      // no success alert
+    } catch (err) {
+      console.error('Level down error:', err)
+      showAlert(err.message || 'Greška pri smanjenju levela')
+    } finally {
+      setLevelingUp(false)
+    }
+  }
+
+  const handleSaveProfile = async () => {
+    const initData = getTgInitData()
+    if (!initData) {
+      showAlert('Telegram WebApp nije dostupan')
+      return
+    }
+
+    if (location.length > MAX_TEXT_LENGTH) {
+      showAlert(`Lokacija je predugačka (max ${MAX_TEXT_LENGTH} karaktera)`)
+      return
+    }
+
+    if (statusMessage.length > MAX_TEXT_LENGTH) {
+      showAlert(`Status je predugačak (max ${MAX_TEXT_LENGTH} karaktera)`)
+      return
+    }
+
+    setSaving(true)
+    try {
+      const res = await fetch(`${API_BASE}/api/update-profile`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-telegram-init-data': initData
+        },
+        body: JSON.stringify({
+          location: location.trim() || null,
+          status_message: statusMessage.trim() || null
+        })
+      })
+
+      const data = await res.json()
+
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to save profile')
+      }
+
+      setProfile(prev => prev ? {
+        ...prev,
+        location: location.trim() || null,
+        status_message: statusMessage.trim() || null
+      } : null)
+      // no success alert
+    } catch (err) {
+      console.error('Save profile error:', err)
+      showAlert(err.message || 'Greška pri čuvanju profila')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleResetAll = async () => {
+    const initData = getTgInitData()
+    if (!initData) {
+      showAlert('Telegram WebApp nije dostupan')
+      return
+    }
+
+    setSaving(true)
+    try {
+      const res = await fetch(`${API_BASE}/api/reset-profile`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-telegram-init-data': initData
+        }
+      })
+
+      const data = await res.json()
+
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to reset profile')
+      }
+
+      setProfile(prev => prev ? { ...prev, level: 0, location: null, status_message: null } : null)
+      setLocation('')
+      setStatusMessage('')
+      // no success alert
+    } catch (err) {
+      console.error('Reset profile error:', err)
+      showAlert(err.message || 'Greška pri resetovanju')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleClearStatus = async () => {
+    const initData = getTgInitData()
+    if (!initData) {
+      showAlert('Telegram WebApp nije dostupan')
+      return
+    }
+
+    setSaving(true)
+    try {
+      const res = await fetch(`${API_BASE}/api/update-profile`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-telegram-init-data': initData
+        },
+        body: JSON.stringify({ status_message: null })
+      })
+
+      const data = await res.json()
+
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to clear status')
+      }
+
+      setStatusMessage('')
+      setProfile(prev => prev ? { ...prev, status_message: null } : null)
+      // no success alert
+    } catch (err) {
+      console.error('Clear status error:', err)
+      showAlert(err.message || 'Greška pri brisanju statusa')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const currentLevel = profile?.level ?? 0
+  const displayName = profile?.clown_name || profile?.first_name || tgUser?.first_name || 'Klovn'
+
+  if (loading) {
+    return (
+      <div className="flex justify-center items-center py-24">
+        <svg className="animate-spin h-8 w-8 text-orange-500" viewBox="0 0 24 24">
+          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+        </svg>
+      </div>
+    )
+  }
+
+  return (
+    <div className="max-w-md mx-auto p-4 pb-20">
+      {/* Profile header */}
+      <div className="bg-gray-800/80 rounded-2xl p-6 border border-gray-700 shadow-lg mb-4 text-center">
+        <ClownImage level={currentLevel} size="xl" />
+        <h2 className="text-xl font-bold text-white mt-4">{displayName}</h2>
+        <div className="inline-flex items-center gap-2 mt-2">
+          <span className="px-3 py-1 bg-orange-600 text-white font-bold rounded-full">
+            Level {currentLevel}/{MAX_LEVEL}
+          </span>
+        </div>
+
+        {/* Level buttons */}
+        <div className="flex gap-3 mt-4">
+          <button
+            onClick={handleLevelDown}
+            disabled={levelingUp || currentLevel <= 0}
+            className={`flex-1 py-3 rounded-xl font-semibold text-white transition-all ${
+              currentLevel <= 0
+                ? 'bg-gray-600 cursor-not-allowed'
+                : 'bg-gray-700 hover:bg-gray-600 border border-gray-600'
+            }`}
+          >
+            {levelingUp ? '...' : '🎚️ Level -1'}
+          </button>
+          <button
+            onClick={handleLevelUp}
+            disabled={levelingUp || currentLevel >= MAX_LEVEL}
+            className={`flex-1 py-3 rounded-xl font-semibold text-white transition-all ${
+              currentLevel >= MAX_LEVEL
+                ? 'bg-gray-600 cursor-not-allowed'
+                : 'bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 shadow-lg hover:shadow-orange-500/25'
+            }`}
+          >
+            {levelingUp ? (
+              <span className="flex items-center justify-center gap-2">
+                <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                </svg>
+              </span>
+            ) : currentLevel >= MAX_LEVEL ? (
+              '🏆 Max!'
+            ) : (
+              '🎚️ Level +1'
+            )}
+          </button>
+        </div>
+      </div>
+
+      {/* Edit profile */}
+      <div className="bg-gray-800/80 rounded-2xl p-6 border border-gray-700 shadow-lg space-y-4">
+        <h3 className="text-lg font-semibold text-white mb-4">Uredi profil</h3>
+
+        {/* Location */}
+        <div>
+          <label className="block text-gray-400 text-sm mb-2">📍 Lokacija</label>
+          <input
+            type="text"
+            value={location}
+            onChange={(e) => setLocation(e.target.value)}
+            placeholder="npr. Kafana Kod Mike"
+            maxLength={MAX_TEXT_LENGTH}
+            className="w-full bg-gray-700 border border-gray-600 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-orange-500 transition-colors"
+          />
+        </div>
+
+        {/* Status message */}
+        <div>
+          <div className="flex justify-between items-center mb-2">
+            <label className="text-gray-400 text-sm">💬 Status poruka</label>
+            <span className={`text-xs ${statusMessage.length > MAX_TEXT_LENGTH ? 'text-red-500' : 'text-gray-500'}`}>
+              {statusMessage.length}/{MAX_TEXT_LENGTH}
+            </span>
+          </div>
+          <textarea
+            value={statusMessage}
+            onChange={(e) => setStatusMessage(e.target.value)}
+            placeholder="npr. Pijem kafu ☕"
+            maxLength={MAX_TEXT_LENGTH}
+            rows={3}
+            className="w-full bg-gray-700 border border-gray-600 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-orange-500 transition-colors resize-none"
+          />
+        </div>
+
+        {/* Save button */}
+        <button
+          onClick={handleSaveProfile}
+          disabled={saving}
+          className="w-full bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 disabled:from-gray-600 disabled:to-gray-600 py-3 rounded-xl font-semibold text-white transition-all shadow-lg hover:shadow-orange-500/25"
+        >
+          {saving ? (
+            <span className="flex items-center justify-center gap-2">
+              <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+              </svg>
+              Čuvam...
+            </span>
+          ) : (
+            '💾 Sačuvaj profil'
+          )}
+        </button>
+
+        {/* Clear status button */}
+        {profile?.status_message && (
+          <button
+            onClick={handleClearStatus}
+            disabled={saving}
+            className="w-full bg-gray-700 hover:bg-gray-600 disabled:bg-gray-800 py-3 rounded-xl font-semibold text-gray-300 transition-all border border-gray-600"
+          >
+            🗑️ Obriši status
+          </button>
+        )}
+
+        {/* Reset all button */}
+        <button
+          onClick={handleResetAll}
+          disabled={saving}
+          className="w-full bg-red-900/50 hover:bg-red-800/50 disabled:bg-gray-800 py-3 rounded-xl font-semibold text-red-300 transition-all border border-red-800/50 mt-4"
+        >
+          🔄 Resetuj sve (level, lokacija, status)
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// Main App component
+export default function App() {
+  const [activeTab, setActiveTab] = useState('dashboard')
+
+  useEffect(() => {
+    try {
+      const WebApp = window.Telegram?.WebApp
+      if (WebApp) {
+        WebApp.ready()
+        // WebApp.expand() // ostavi ugašeno da compact radi
+        WebApp.setHeaderColor('#111827')
+        WebApp.setBackgroundColor('#111827')
+      }
+    } catch (err) {
+      console.error('Telegram WebApp init error:', err)
+    }
+  }, [])
+
+  return (
+    <div className="min-h-screen bg-gradient-to-b from-gray-900 via-gray-800 to-orange-900/30">
+      {/* Content */}
+      <div className="pt-2">
+        {activeTab === 'dashboard' ? <DashboardTab /> : <ProfileTab />}
+      </div>
+
+      {/* Sticky tab navigation */}
+      <nav className="fixed bottom-0 left-0 right-0 bg-gray-900/95 backdrop-blur border-t border-gray-800 safe-area-inset-bottom">
+        <div className="flex">
+          <button
+            onClick={() => setActiveTab('dashboard')}
+            className={`flex-1 py-4 text-center font-medium transition-colors ${
+              activeTab === 'dashboard'
+                ? 'text-orange-500 bg-orange-500/10'
+                : 'text-gray-400 hover:text-gray-200'
+            }`}
+          >
+            <span className="text-xl">📊</span>
+            <div className="text-xs mt-1">Dashboard</div>
+          </button>
+          <button
+            onClick={() => setActiveTab('profile')}
+            className={`flex-1 py-4 text-center font-medium transition-colors ${
+              activeTab === 'profile'
+                ? 'text-orange-500 bg-orange-500/10'
+                : 'text-gray-400 hover:text-gray-200'
+            }`}
+          >
+            <span className="text-xl">🤡</span>
+            <div className="text-xs mt-1">Moj Profil</div>
+          </button>
+        </div>
+      </nav>
+    </div>
+  )
+}
