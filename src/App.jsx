@@ -241,12 +241,21 @@ function DashboardTab() {
 function ProfileTab() {
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
-  const [levelingUp, setLevelingUp] = useState(false)
   const [profile, setProfile] = useState(null)
-  const [location, setLocation] = useState('')
-  const [statusMessage, setStatusMessage] = useState('')
+
+  // Local edit state - changes are saved only when "Sačuvaj" is clicked
+  const [editLevel, setEditLevel] = useState(0)
+  const [editLocation, setEditLocation] = useState('')
+  const [editStatus, setEditStatus] = useState('')
 
   const tgUser = getTgUser()
+
+  // Check if there are unsaved changes
+  const hasChanges = profile && (
+    editLevel !== (profile.level ?? 0) ||
+    editLocation !== (profile.location || '') ||
+    editStatus !== (profile.status_message || '')
+  )
 
   const fetchProfile = useCallback(async () => {
     if (!tgUser?.id) return
@@ -261,8 +270,10 @@ function ProfileTab() {
 
       if (myProfile) {
         setProfile(myProfile)
-        setLocation(myProfile.location || '')
-        setStatusMessage(myProfile.status_message || '')
+        // Initialize local edit state from profile
+        setEditLevel(myProfile.level ?? 0)
+        setEditLocation(myProfile.location || '')
+        setEditStatus(myProfile.status_message || '')
       }
     } catch (err) {
       console.error('Fetch profile error:', err)
@@ -276,72 +287,29 @@ function ProfileTab() {
     fetchProfile()
   }, [fetchProfile])
 
-  const handleLevelUp = async () => {
-    const initData = getTgInitData()
-    if (!initData) {
-      showAlert('Telegram WebApp nije dostupan')
-      return
-    }
-
-    setLevelingUp(true)
-    try {
-      const res = await fetch(`${API_BASE}/api/level-up`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-telegram-init-data': initData
-        }
-      })
-
-      const data = await res.json()
-
-      if (!res.ok) {
-        throw new Error(data.error || 'Failed to level up')
-      }
-
-      setProfile(prev => prev ? { ...prev, level: data.level } : null)
-      // no success alert
-    } catch (err) {
-      console.error('Level up error:', err)
-      showAlert(err.message || 'Greška pri povećanju levela')
-    } finally {
-      setLevelingUp(false)
+  // Local level controls - no API call
+  const handleLevelUp = () => {
+    if (editLevel < MAX_LEVEL) {
+      setEditLevel(prev => prev + 1)
     }
   }
 
-  const handleLevelDown = async () => {
-    const initData = getTgInitData()
-    if (!initData) {
-      showAlert('Telegram WebApp nije dostupan')
-      return
-    }
-
-    setLevelingUp(true)
-    try {
-      const res = await fetch(`${API_BASE}/api/level-down`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-telegram-init-data': initData
-        }
-      })
-
-      const data = await res.json()
-
-      if (!res.ok) {
-        throw new Error(data.error || 'Failed to level down')
-      }
-
-      setProfile(prev => prev ? { ...prev, level: data.level } : null)
-      // no success alert
-    } catch (err) {
-      console.error('Level down error:', err)
-      showAlert(err.message || 'Greška pri smanjenju levela')
-    } finally {
-      setLevelingUp(false)
+  const handleLevelDown = () => {
+    if (editLevel > 0) {
+      setEditLevel(prev => prev - 1)
     }
   }
 
+  // Cancel changes - reset to original values
+  const handleCancelChanges = () => {
+    if (profile) {
+      setEditLevel(profile.level ?? 0)
+      setEditLocation(profile.location || '')
+      setEditStatus(profile.status_message || '')
+    }
+  }
+
+  // Save all changes with single API call
   const handleSaveProfile = async () => {
     const initData = getTgInitData()
     if (!initData) {
@@ -349,12 +317,18 @@ function ProfileTab() {
       return
     }
 
-    if (location.length > MAX_TEXT_LENGTH) {
+    // Validation
+    if (editLevel < 0 || editLevel > MAX_LEVEL) {
+      showAlert(`Level mora biti između 0 i ${MAX_LEVEL}`)
+      return
+    }
+
+    if (editLocation.length > MAX_TEXT_LENGTH) {
       showAlert(`Lokacija je predugačka (max ${MAX_TEXT_LENGTH} karaktera)`)
       return
     }
 
-    if (statusMessage.length > MAX_TEXT_LENGTH) {
+    if (editStatus.length > MAX_TEXT_LENGTH) {
       showAlert(`Status je predugačak (max ${MAX_TEXT_LENGTH} karaktera)`)
       return
     }
@@ -368,8 +342,9 @@ function ProfileTab() {
           'x-telegram-init-data': initData
         },
         body: JSON.stringify({
-          location: location.trim() || null,
-          status_message: statusMessage.trim() || null
+          level: editLevel,
+          location: editLocation.trim() || null,
+          status_message: editStatus.trim() || null
         })
       })
 
@@ -379,12 +354,15 @@ function ProfileTab() {
         throw new Error(data.error || 'Failed to save profile')
       }
 
+      // Update profile with new values
       setProfile(prev => prev ? {
         ...prev,
-        location: location.trim() || null,
-        status_message: statusMessage.trim() || null
+        level: editLevel,
+        location: editLocation.trim() || null,
+        status_message: editStatus.trim() || null
       } : null)
-      // no success alert
+
+      showAlert('Profil sačuvan!')
     } catch (err) {
       console.error('Save profile error:', err)
       showAlert(err.message || 'Greška pri čuvanju profila')
@@ -393,77 +371,6 @@ function ProfileTab() {
     }
   }
 
-  const handleResetAll = async () => {
-    const initData = getTgInitData()
-    if (!initData) {
-      showAlert('Telegram WebApp nije dostupan')
-      return
-    }
-
-    setSaving(true)
-    try {
-      const res = await fetch(`${API_BASE}/api/reset-profile`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-telegram-init-data': initData
-        }
-      })
-
-      const data = await res.json()
-
-      if (!res.ok) {
-        throw new Error(data.error || 'Failed to reset profile')
-      }
-
-      setProfile(prev => prev ? { ...prev, level: 0, location: null, status_message: null } : null)
-      setLocation('')
-      setStatusMessage('')
-      // no success alert
-    } catch (err) {
-      console.error('Reset profile error:', err)
-      showAlert(err.message || 'Greška pri resetovanju')
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  const handleClearStatus = async () => {
-    const initData = getTgInitData()
-    if (!initData) {
-      showAlert('Telegram WebApp nije dostupan')
-      return
-    }
-
-    setSaving(true)
-    try {
-      const res = await fetch(`${API_BASE}/api/update-profile`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-telegram-init-data': initData
-        },
-        body: JSON.stringify({ status_message: null })
-      })
-
-      const data = await res.json()
-
-      if (!res.ok) {
-        throw new Error(data.error || 'Failed to clear status')
-      }
-
-      setStatusMessage('')
-      setProfile(prev => prev ? { ...prev, status_message: null } : null)
-      // no success alert
-    } catch (err) {
-      console.error('Clear status error:', err)
-      showAlert(err.message || 'Greška pri brisanju statusa')
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  const currentLevel = profile?.level ?? 0
   const displayName = profile?.clown_name || profile?.first_name || tgUser?.first_name || 'Klovn'
 
   if (loading) {
@@ -481,49 +388,50 @@ function ProfileTab() {
     <div className="max-w-md mx-auto p-4 pb-20">
       {/* Profile header */}
       <div className="bg-gray-800/80 rounded-2xl p-6 border border-gray-700 shadow-lg mb-4 text-center">
-        <ClownImage level={currentLevel} size="xl" />
+        {/* Clown image updates in real-time based on editLevel */}
+        <ClownImage level={editLevel} size="xl" />
         <h2 className="text-xl font-bold text-white mt-4">{displayName}</h2>
-        <div className="inline-flex items-center gap-2 mt-2">
-          <span className="px-3 py-1 bg-orange-600 text-white font-bold rounded-full">
-            Level {currentLevel}/{MAX_LEVEL}
-          </span>
-        </div>
 
-        {/* Level buttons */}
-        <div className="flex gap-3 mt-4">
+        {/* Unsaved changes indicator */}
+        {hasChanges && (
+          <div className="mt-2 text-yellow-500 text-sm">
+            ⚠️ Imaš nesačuvane izmene
+          </div>
+        )}
+
+        {/* Level controls in one row */}
+        <div className="flex items-center justify-center gap-3 mt-4">
           <button
             onClick={handleLevelDown}
-            disabled={levelingUp || currentLevel <= 0}
-            className={`flex-1 py-3 rounded-xl font-semibold text-white transition-all ${
-              currentLevel <= 0
-                ? 'bg-gray-600 cursor-not-allowed'
-                : 'bg-gray-700 hover:bg-gray-600 border border-gray-600'
+            disabled={editLevel <= 0}
+            className={`w-14 h-14 rounded-xl font-bold text-xl transition-all ${
+              editLevel <= 0
+                ? 'bg-gray-700 text-gray-500 cursor-not-allowed'
+                : 'bg-gray-700 hover:bg-gray-600 text-white border border-gray-600'
             }`}
           >
-            {levelingUp ? '...' : '🎚️ Level -1'}
+            −
           </button>
+
+          <div className="px-6 py-3 bg-orange-600 text-white font-bold rounded-xl min-w-[100px]">
+            LVL {editLevel}
+          </div>
+
           <button
             onClick={handleLevelUp}
-            disabled={levelingUp || currentLevel >= MAX_LEVEL}
-            className={`flex-1 py-3 rounded-xl font-semibold text-white transition-all ${
-              currentLevel >= MAX_LEVEL
-                ? 'bg-gray-600 cursor-not-allowed'
-                : 'bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 shadow-lg hover:shadow-orange-500/25'
+            disabled={editLevel >= MAX_LEVEL}
+            className={`w-14 h-14 rounded-xl font-bold text-xl transition-all ${
+              editLevel >= MAX_LEVEL
+                ? 'bg-gray-700 text-gray-500 cursor-not-allowed'
+                : 'bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white shadow-lg'
             }`}
           >
-            {levelingUp ? (
-              <span className="flex items-center justify-center gap-2">
-                <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                </svg>
-              </span>
-            ) : currentLevel >= MAX_LEVEL ? (
-              '🏆 Max!'
-            ) : (
-              '🎚️ Level +1'
-            )}
+            +
           </button>
+        </div>
+
+        <div className="text-gray-500 text-xs mt-2">
+          Max level: {MAX_LEVEL}
         </div>
       </div>
 
@@ -536,8 +444,8 @@ function ProfileTab() {
           <label className="block text-gray-400 text-sm mb-2">📍 Lokacija</label>
           <input
             type="text"
-            value={location}
-            onChange={(e) => setLocation(e.target.value)}
+            value={editLocation}
+            onChange={(e) => setEditLocation(e.target.value)}
             placeholder="npr. Kafana Kod Mike"
             maxLength={MAX_TEXT_LENGTH}
             className="w-full bg-gray-700 border border-gray-600 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-orange-500 transition-colors"
@@ -548,13 +456,13 @@ function ProfileTab() {
         <div>
           <div className="flex justify-between items-center mb-2">
             <label className="text-gray-400 text-sm">💬 Status poruka</label>
-            <span className={`text-xs ${statusMessage.length > MAX_TEXT_LENGTH ? 'text-red-500' : 'text-gray-500'}`}>
-              {statusMessage.length}/{MAX_TEXT_LENGTH}
+            <span className={`text-xs ${editStatus.length > MAX_TEXT_LENGTH ? 'text-red-500' : 'text-gray-500'}`}>
+              {editStatus.length}/{MAX_TEXT_LENGTH}
             </span>
           </div>
           <textarea
-            value={statusMessage}
-            onChange={(e) => setStatusMessage(e.target.value)}
+            value={editStatus}
+            onChange={(e) => setEditStatus(e.target.value)}
             placeholder="npr. Pijem kafu ☕"
             maxLength={MAX_TEXT_LENGTH}
             rows={3}
@@ -581,25 +489,16 @@ function ProfileTab() {
           )}
         </button>
 
-        {/* Clear status button */}
-        {profile?.status_message && (
+        {/* Cancel changes button - only show if there are changes */}
+        {hasChanges && (
           <button
-            onClick={handleClearStatus}
+            onClick={handleCancelChanges}
             disabled={saving}
             className="w-full bg-gray-700 hover:bg-gray-600 disabled:bg-gray-800 py-3 rounded-xl font-semibold text-gray-300 transition-all border border-gray-600"
           >
-            🗑️ Obriši status
+            ↩️ Otkaži izmene
           </button>
         )}
-
-        {/* Reset all button */}
-        <button
-          onClick={handleResetAll}
-          disabled={saving}
-          className="w-full bg-red-900/50 hover:bg-red-800/50 disabled:bg-gray-800 py-3 rounded-xl font-semibold text-red-300 transition-all border border-red-800/50 mt-4"
-        >
-          🔄 Resetuj sve (level, lokacija, status)
-        </button>
       </div>
     </div>
   )
