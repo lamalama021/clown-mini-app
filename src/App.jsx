@@ -731,6 +731,154 @@ function ProfileTab() {
   )
 }
 
+// Spin game tab component - fully frontend, no Supabase
+function SpinTab() {
+  const [names, setNames] = useState([])
+  const [inputValue, setInputValue] = useState('')
+  const [selectedName, setSelectedName] = useState(null)
+  const [isSpinning, setIsSpinning] = useState(false)
+  const [highlightIndex, setHighlightIndex] = useState(-1)
+
+  const addName = () => {
+    const trimmed = inputValue.trim()
+    if (!trimmed) return
+    if (names.includes(trimmed)) {
+      showAlert('To ime je vec dodato!')
+      return
+    }
+    setNames(prev => [...prev, trimmed])
+    setInputValue('')
+    setSelectedName(null)
+  }
+
+  const removeName = (index) => {
+    setNames(prev => prev.filter((_, i) => i !== index))
+    setSelectedName(null)
+    setHighlightIndex(-1)
+  }
+
+  const handleSpin = () => {
+    if (names.length < 2) {
+      showAlert('Dodaj bar 2 imena da bi zavrteo!')
+      return
+    }
+
+    setSelectedName(null)
+    setIsSpinning(true)
+
+    const totalSteps = 20 + Math.floor(Math.random() * 15)
+    let step = 0
+    let current = 0
+
+    const interval = setInterval(() => {
+      current = (current + 1) % names.length
+      setHighlightIndex(current)
+      step++
+
+      if (step >= totalSteps) {
+        clearInterval(interval)
+        setHighlightIndex(-1)
+        setSelectedName(names[current])
+        setIsSpinning(false)
+      }
+    }, 60 + step * 8)
+  }
+
+  return (
+    <div className="max-w-md mx-auto p-4 pb-20">
+      <div className="bg-gray-800/80 rounded-2xl p-6 border border-gray-700 shadow-lg">
+        <h3 className="text-lg font-semibold text-white mb-1">🎰 Clown Spin</h3>
+        <p className="text-gray-400 text-sm mb-4">Dodaj imena i zavrti da vidis ko je izabran!</p>
+
+        {/* Add name input */}
+        <div className="flex gap-2 mb-4">
+          <input
+            type="text"
+            value={inputValue}
+            onChange={(e) => setInputValue(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && addName()}
+            placeholder="Dodaj ime..."
+            maxLength={50}
+            className="flex-1 bg-gray-700 border border-gray-600 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-orange-500 transition-colors"
+          />
+          <button
+            onClick={addName}
+            disabled={!inputValue.trim()}
+            className="bg-orange-600 hover:bg-orange-700 disabled:bg-gray-600 text-white px-4 py-3 rounded-xl font-bold text-lg transition-colors disabled:cursor-not-allowed"
+          >
+            +
+          </button>
+        </div>
+
+        {/* Names list */}
+        {names.length === 0 ? (
+          <div className="text-center py-8 text-gray-500">
+            <div className="text-4xl mb-2">🤡</div>
+            <p>Nema imena. Dodaj nekog klovna!</p>
+          </div>
+        ) : (
+          <div className="space-y-2 mb-4 max-h-64 overflow-y-auto">
+            {names.map((name, index) => (
+              <div
+                key={index}
+                className={`flex items-center justify-between px-4 py-3 rounded-xl border transition-all duration-150 ${
+                  selectedName === name
+                    ? 'bg-orange-600/30 border-orange-500 shadow-lg shadow-orange-500/20'
+                    : highlightIndex === index
+                    ? 'bg-orange-500/20 border-orange-600'
+                    : 'bg-gray-700/50 border-gray-600'
+                }`}
+              >
+                <span className={`font-medium ${
+                  selectedName === name ? 'text-orange-300 text-lg' : 'text-white'
+                }`}>
+                  {selectedName === name && '🎉 '}{name}
+                </span>
+                <button
+                  onClick={() => removeName(index)}
+                  disabled={isSpinning}
+                  className="text-gray-400 hover:text-red-400 transition-colors disabled:opacity-30 disabled:cursor-not-allowed ml-2"
+                >
+                  ✕
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Spin result */}
+        {selectedName && (
+          <div className="text-center py-4 mb-4 bg-gradient-to-r from-orange-500/20 to-orange-600/20 rounded-xl border border-orange-500/50">
+            <div className="text-3xl mb-1">🎉🤡🎉</div>
+            <div className="text-orange-400 text-sm">Izabran klovn:</div>
+            <div className="text-white text-2xl font-bold mt-1">{selectedName}</div>
+          </div>
+        )}
+
+        {/* Spin button */}
+        <button
+          onClick={handleSpin}
+          disabled={isSpinning || names.length < 2}
+          className={`w-full py-4 rounded-xl font-bold text-lg transition-all ${
+            isSpinning
+              ? 'bg-orange-600 animate-pulse text-white'
+              : names.length < 2
+              ? 'bg-gray-600 text-gray-400 cursor-not-allowed'
+              : 'bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white shadow-lg hover:shadow-orange-500/25'
+          }`}
+        >
+          {isSpinning ? '🎰 Vrti se...' : '🎰 ZAVRTI!'}
+        </button>
+
+        {/* Counter */}
+        <div className="text-center text-gray-500 text-xs mt-3">
+          {names.length} {names.length === 1 ? 'ime' : 'imena'} u igri
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // Main App component
 export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard')
@@ -756,6 +904,7 @@ export default function App() {
         {activeTab === 'dashboard' && <DashboardTab />}
         {activeTab === 'edit-other' && <EditOtherTab />}
         {activeTab === 'profile' && <ProfileTab />}
+        {activeTab === 'spin' && <SpinTab />}
       </div>
 
       {/* Sticky tab navigation */}
@@ -793,6 +942,17 @@ export default function App() {
           >
             <span className="text-xl">🤡</span>
             <div className="text-xs mt-1">Moj Profil</div>
+          </button>
+          <button
+            onClick={() => setActiveTab('spin')}
+            className={`flex-1 py-4 text-center font-medium transition-colors ${
+              activeTab === 'spin'
+                ? 'text-orange-500 bg-orange-500/10'
+                : 'text-gray-400 hover:text-gray-200'
+            }`}
+          >
+            <span className="text-xl">🎰</span>
+            <div className="text-xs mt-1">Spin</div>
           </button>
         </div>
       </nav>
