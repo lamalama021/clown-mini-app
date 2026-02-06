@@ -995,6 +995,15 @@ function DuelTab() {
     if (view === 'lobby') fetchLobby()
   }, [view, fetchLobby])
 
+  // Poll for updates when it's not my turn (every 10s)
+  useEffect(() => {
+    if (view !== 'game' || !activeDuelId || !gameState) return
+    if (gameState.duel.status === 'finished') return
+    if (gameState.is_my_turn) return
+
+    const timer = setInterval(() => fetchGameState(activeDuelId), 1000)
+    return () => clearInterval(timer)
+  }, [view, activeDuelId, gameState, fetchGameState])
 
   const handleChallenge = async (opponentId) => {
     if (!initData) return
@@ -1077,6 +1086,25 @@ function DuelTab() {
       }
     } catch (err) {
       showAlert('Greska pri akciji')
+    } finally {
+      setActing(false)
+    }
+  }
+
+  const handleSurrender = async () => {
+    if (!initData || !activeDuelId || acting) return
+    if (!confirm('Sigurno se predajes?')) return
+    setActing(true)
+    try {
+      const res = await fetch(`${API_BASE}/api/duels?op=surrender&id=${activeDuelId}`, {
+        method: 'POST',
+        headers: { 'x-telegram-init-data': initData }
+      })
+      const data = await res.json()
+      if (!res.ok) { showAlert(data.error || 'Greska'); return }
+      await fetchGameState(activeDuelId)
+    } catch (err) {
+      showAlert('Greska pri predaji')
     } finally {
       setActing(false)
     }
@@ -1232,6 +1260,14 @@ function DuelTab() {
               )
             })}
           </div>
+        )}
+
+        {/* Surrender button */}
+        {!isFinished && (
+          <button onClick={handleSurrender} disabled={acting}
+            className="mt-4 w-full py-2 rounded-xl text-sm bg-red-900/30 border border-red-800 text-red-400 hover:bg-red-900/50 disabled:opacity-50">
+            🏳️ Predaj se
+          </button>
         )}
       </div>
     )
