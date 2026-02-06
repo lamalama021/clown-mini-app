@@ -1091,6 +1091,25 @@ function DuelTab() {
     }
   }
 
+  const handleSurrender = async () => {
+    if (!initData || !activeDuelId || acting) return
+    if (!confirm('Sigurno se predajes?')) return
+    setActing(true)
+    try {
+      const res = await fetch(`${API_BASE}/api/duels?op=surrender&id=${activeDuelId}`, {
+        method: 'POST',
+        headers: { 'x-telegram-init-data': initData }
+      })
+      const data = await res.json()
+      if (!res.ok) { showAlert(data.error || 'Greska'); return }
+      await fetchGameState(activeDuelId)
+    } catch (err) {
+      showAlert('Greska pri predaji')
+    } finally {
+      setActing(false)
+    }
+  }
+
   const getName = (u) => u?.clown_name || u?.first_name || u?.username || 'Klovn'
   const getNameStr = (d, prefix) => d[`${prefix}_name`] || d[`${prefix}_first`] || d[`${prefix}_user`] || 'Klovn'
 
@@ -1241,6 +1260,14 @@ function DuelTab() {
               )
             })}
           </div>
+        )}
+
+        {/* Surrender button */}
+        {!isFinished && (
+          <button onClick={handleSurrender} disabled={acting}
+            className="mt-4 w-full py-2 rounded-xl text-sm bg-red-900/30 border border-red-800 text-red-400 hover:bg-red-900/50 disabled:opacity-50">
+            🏳️ Predaj se
+          </button>
         )}
       </div>
     )
